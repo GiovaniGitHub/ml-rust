@@ -9,8 +9,9 @@ name = "rust_regressions"
 path = "src/lib.rs"
 
 [dependencies]
+crate = "*"
 plotly = "*"
 nalgebra = "*"
-smartcore = "0.2.0"
 rand = "*"
 num-traits = "*"
+matrix = "*"
