@@ -1,17 +1,16 @@
 pub enum TypeRegression {
     MAE,
     MSE,
-    HUBER
+    HUBER,
 }
 
 pub enum TypeFactoration {
     SVD,
     QR,
-    CHOLESKY,
+    LU,
 }
 
-pub enum Option<TypeFactoration>{
+pub enum Option<TypeFactoration> {
     None,
-    Some(TypeFactoration)
-
+    Some(TypeFactoration),
 }
