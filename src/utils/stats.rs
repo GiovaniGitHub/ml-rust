@@ -1,5 +1,8 @@
-use smartcore::linalg::{naive::dense_matrix::DenseMatrix, BaseMatrix};
-use std::ops::Mul;
+//use smartcore::linalg::{naive::dense_matrix::DenseMatrix, BaseMatrix};
+
+//use std::ops::Sub;
+
+use nalgebra::DMatrix;
 
 pub fn mean(values: &Vec<f32>) -> f32 {
     if values.len() == 0 {
@@ -44,84 +47,85 @@ pub fn covariance(x_values: &Vec<f32>, y_values: &Vec<f32>) -> f32 {
     return covariance / length as f32;
 }
 
-pub fn mse(y: DenseMatrix<f32>, y_hat: DenseMatrix<f32>) -> f32 {
-    let n_rows = y.shape().0 as f32;
-    let aux: f32 = y
-        .sub(&y_hat)
-        .to_row_vector()
-        .iter()
-        .map(|x| x.powf(2.0))
-        .sum();
-    return aux / n_rows;
+pub fn mse(y: DMatrix<f32>, y_hat: DMatrix<f32>) -> f32 {
+    let n_rows = y.nrows() as f32;
+    return (0..y.nrows())
+        .map(|idx| ((y.row(idx)[0] - y_hat.row(idx)[0]).powf(2.0)))
+        .sum::<f32>()
+        / n_rows;
 }
 
-pub fn mae(y: DenseMatrix<f32>, y_hat: DenseMatrix<f32>) -> f32 {
-    let n_rows = y.shape().0 as f32;
-    let aux: f32 = y.sub(&y_hat).to_row_vector().iter().map(|x| x.abs()).sum();
-    return aux / n_rows;
+pub fn mae(y: DMatrix<f32>, y_hat: DMatrix<f32>) -> f32 {
+    let n_rows = y.nrows() as f32;
+    return (0..y.nrows())
+        .map(|idx| ((y.row(idx)[0] - y_hat.row(idx)[0]).abs()))
+        .sum::<f32>()
+        / n_rows;
+}
+
+pub fn update_weights_mse_vanilla(
+    x: &DMatrix<f32>,
+    y: &DMatrix<f32>,
+    y_hat: &DMatrix<f32>,
+    lr: f32,
+) -> (DMatrix<f32>, f32) {
+    let (nrows, ncols) = x.shape();
+    let dif = DMatrix::from_vec(nrows, 1, (y - y_hat).data.as_vec().to_vec());
+    let mut dw = vec![0.0; ncols];
+    for j in 0..ncols {
+        for i in 0..nrows {
+            dw[j] += &dif[(i, 0)] * x[(i, j)];
+        }
+        dw[j] *= 1.0 / (2.0 * nrows as f32) * lr;
+    }
+    let db = (dif.iter().sum::<f32>()) * (1.0 / (2.0 * nrows as f32)) * lr;
+    return (DMatrix::from_vec(ncols, 1, dw.clone()), db);
 }
 
 pub fn update_weights_mse(
-    x: &DenseMatrix<f32>,
-    y: &DenseMatrix<f32>,
-    y_hat: &DenseMatrix<f32>,
+    x: &DMatrix<f32>,
+    y: &DMatrix<f32>,
+    y_hat: &DMatrix<f32>,
     lr: f32,
-) -> (DenseMatrix<f32>, f32) {
-    let (n_rows, n_cols) = x.shape();
-    let dif = y.sub(y_hat);
-    let mut dw: Vec<f32> = Vec::new();
-    for i in 0..n_cols {
-        dw.push((1.0 / (2.0 * (n_rows as f32))) * x.slice(0..n_rows, i..i + 1).dot(&dif) * lr)
-    }
+) -> (DMatrix<f32>, f32) {
+    let (nrows, ncols) = x.shape();
+    let dif = DMatrix::from_vec(nrows, 1, (y - y_hat).data.as_vec().to_vec());
 
-    let sum_dif: f32 = dif.iter().sum();
-    let db: f32 = sum_dif.mul(1.0 / (2.0 * (n_rows as f32))) * lr;
-    return (DenseMatrix::from_array(n_cols, 1, &dw), db);
+    let dw = (0..ncols)
+        .map(|i| (1.0 / (2.0 * nrows as f32)) * x.column(i).dot(&dif))
+        .collect();
+
+    let db: f32 = (dif.iter().sum::<f32>()) * (1.0 / (2.0 * nrows as f32)) * lr;
+    return (DMatrix::from_vec(x.ncols(), 1, dw), db);
 }
 
 pub fn update_weights_mae(
-    x: &DenseMatrix<f32>,
-    y: &DenseMatrix<f32>,
-    y_hat: &DenseMatrix<f32>,
+    x: &DMatrix<f32>,
+    y: &DMatrix<f32>,
+    y_hat: &DMatrix<f32>,
     lr: f32,
-) -> (DenseMatrix<f32>, f32) {
-    let (n_rows, n_cols) = x.shape();
-    let dif = y.sub(y_hat);
-    let dif_abs_sum: f32 = dif.clone().to_row_vector().iter().map(|x| x.abs()).sum();
-    let mut dw: Vec<f32> = Vec::new();
-    for i in 0..n_cols {
-        dw.push((1.0 / dif_abs_sum) * x.slice(0..n_rows, i..i + 1).dot(&dif) * lr)
-    }
+) -> (DMatrix<f32>, f32) {
+    let (nrows, ncols) = x.shape();
+    let dif = DMatrix::from_vec(nrows, 1, (y - y_hat).data.as_vec().to_vec());
 
-    let sum_dif: f32 = dif.iter().sum();
-    let db: f32 = sum_dif.mul(-1.0 / dif_abs_sum) * lr;
-    return (DenseMatrix::from_array(n_cols, 1, &dw), db);
+    let dw = (0..ncols)
+        .map(|i| (1.0 / dif.abs().sum()) * x.column(i).dot(&dif) * lr)
+        .collect();
+
+    let db: f32 = (-1.0 / dif.abs().sum()) * lr * (dif.sum());
+    return (DMatrix::from_vec(ncols, 1, dw), db);
 }
 
 pub fn update_weights_huber(
-    x: &DenseMatrix<f32>,
-    y: &DenseMatrix<f32>,
-    y_hat: &DenseMatrix<f32>,
+    x: &DMatrix<f32>,
+    y: &DMatrix<f32>,
+    y_hat: &DMatrix<f32>,
     lr: f32,
     delta: f32,
-) -> (DenseMatrix<f32>, f32) {
-    let (n_rows, n_cols) = x.shape();
-    let dif = y.sub(y_hat);
-    let dif_abs_sum: f32 = dif.clone().to_row_vector().iter().map(|x| x.abs()).sum();
-    let mut dw: Vec<f32> = Vec::new();
-    let db: f32;
-    if dif_abs_sum <= delta {
-        for i in 0..n_cols {
-            dw.push((1.0 / dif_abs_sum) * x.slice(0..n_rows, i..i + 1).dot(&dif) * lr)
-        }
-        let sum_dif: f32 = dif.iter().sum();
-        db = sum_dif.mul(-1.0 / dif_abs_sum) * lr;
+) -> (DMatrix<f32>, f32) {
+    if (y - y_hat).abs().sum() <= delta {
+        return update_weights_mae(x, y, y_hat, lr);
     } else {
-        for i in 0..n_cols {
-            dw.push((1.0 / (2.0 * (n_rows as f32))) * x.slice(0..n_rows, i..i + 1).dot(&dif) * lr)
-        }
-        let sum_dif: f32 = dif.iter().sum();
-        db = sum_dif.mul(1.0 / (2.0 * (n_rows as f32))) * lr;
-    }
-    return (DenseMatrix::from_array(n_cols, 1, &dw), db);
+        return update_weights_mse(x, y, y_hat, lr);
+    };
 }
